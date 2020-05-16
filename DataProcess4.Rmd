@@ -1,0 +1,160 @@
+---
+title: "HIST_CRIME"
+author: "Yan Sun(204768204)"
+date: "5/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(readr)
+library(tidyr)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(readr)
+X2019_PART_I_AND_II_CRIMES <- read_csv("2019-PART_I_AND_II_CRIMES.csv")
+```
+
+```{r}
+crime_2019 <- read_csv("2019-PART_I_AND_II_CRIMES.csv")
+crime_2019$INCIDENT_DATE <- sub("\\s.*","",crime_2019$INCIDENT_DATE)
+```
+
+
+## Convert Date variable
+```{r}
+X2019_PART_I_AND_II_CRIMES$INCIDENT_DATE <- sub("\\s.*","",X2019_PART_I_AND_II_CRIMES$INCIDENT_DATE)
+X2019_PART_I_AND_II_CRIMES$INCIDENT_DATE <- as.Date(X2019_PART_I_AND_II_CRIMES$INCIDENT_DATE,"%m/%d/%y")
+X2019_PART_I_AND_II_CRIMES$INCIDENT_DATE <- X2019_PART_I_AND_II_CRIMES$INCIDENT_DATE %>% as.character()
+X2019_PART_I_AND_II_CRIMES$INCIDENT_DATE <- sub("2002|2020","2019",X2019_PART_I_AND_II_CRIMES$INCIDENT_DATE)
+
+X2019_PART_I_AND_II_CRIMES$INCIDENT_DATE <- as.Date(X2019_PART_I_AND_II_CRIMES$INCIDENT_DATE)
+
+
+X2019_PART_I_AND_II_CRIMES$type <- NA
+X2019_PART_I_AND_II_CRIMES[grepl("RAPE",X2019_PART_I_AND_II_CRIMES$STAT_DESC),"type"] <- "rape"
+X2019_PART_I_AND_II_CRIMES[grepl("ELDER|Elder",X2019_PART_I_AND_II_CRIMES$STAT_DESC),"type"] <- "elder"
+X2019_PART_I_AND_II_CRIMES[grepl("CHILD|Children|Child",X2019_PART_I_AND_II_CRIMES$STAT_DESC),"type"] <- "child"
+X2019_PART_I_AND_II_CRIMES[grepl("DOMESTIC|Domestic",X2019_PART_I_AND_II_CRIMES$STAT_DESC),"type"] <- "general"
+
+
+
+
+write.csv(X2019_PART_I_AND_II_CRIMES,"city_crime_2019")
+
+
+
+
+
+
+
+
+```
+
+
+
+```{r}
+CRIMES_LOCKDOWN_2019 <- X2019_PART_I_AND_II_CRIMES %>% filter(INCIDENT_DATE >"2019-03-19", INCIDENT_DATE < "2019-05-04")
+```
+
+
+
+
+
+```{r}
+
+X2019_PART_I_AND_II_CRIMES <- X2019_PART_I_AND_II_CRIMES %>% mutate(DM = grepl('DOMESTIC|Domestic', STAT_DESC))
+
+CRIMES_LOCKDOWN <- CRIMES_LOCKDOWN %>% mutate(DM = grepl('DOMESTIC|Domestic', STAT_DESC))
+
+data_combined <- base::rbind(X2019_PART_I_AND_II_CRIMES[,-c(3,14)],CRIMES_LOCKDOWN)
+
+ggplot(data_combined) + geom_bar(aes(x = months(as.Date(INCIDENT_DATE)), fill = DM))
+
+CRIMES_LOCKDOWN <- CRIMES_LOCKDOWN %>% mutate(dummy = 1)
+ggplot(CRIMES_LOCKDOWN) + geom_bar(aes(x = dummy,fill = DM))
+```
+
+
+## DM Proportion
+
+```{r}
+CRIMES_LOCKDOWN$DM %>% sum()/nrow(CRIMES_LOCKDOWN)
+X2019_PART_I_AND_II_CRIMES %>% group_by(months(INCIDENT_DATE), DM) %>% summarise(n = n()) %>% mutate(prop = n/sum(n))
+```
+
+## LOCKDOWN Period
+
+```{r}
+prev_days <- X2019_PART_I_AND_II_CRIMES %>% filter(INCIDENT_DATE >(as.Date("2019-03-19")-30), INCIDENT_DATE < (as.Date("2019-05-04")-30))
+prev_rate <- prev_days %>% group_by(INCIDENT_DATE) %>% summarise(n = n(),DM = sum(DM)) %>% mutate(prop = DM/n) 
+t.test(prev_rate$prop,DATE_CRIME_2019$DM_Rate)
+
+past_days <- X2019_PART_I_AND_II_CRIMES %>% filter(INCIDENT_DATE >(as.Date("2019-03-19")+30), INCIDENT_DATE < (as.Date("2019-05-04")+30))
+past_rate <- past_days %>% group_by(INCIDENT_DATE) %>% summarise(n = n(),DM = sum(DM)) %>% mutate(prop = DM/n) 
+t.test(past_rate$prop,DATE_CRIME_2019$DM_Rate)
+```
+
+
+## DATE CRIME 2019
+
+```{r}
+DATE_CRIME_2019 <- data.frame(table(CRIMES_LOCKDOWN_2019$INCIDENT_DATE))
+colnames(DATE_CRIME_2019) <- c("DATE","TOTAL_CRIME")
+
+DM_CASE_2019 <- filter(CRIMES_LOCKDOWN_2019, grepl('DOMESTIC|Domestic', STAT_DESC))$INCIDENT_DATE %>% table() %>% data.frame()
+CHILD_CASE_2019 <- filter(CRIMES_LOCKDOWN_2019, grepl('CHILD|Child|Children', STAT_DESC))$INCIDENT_DATE %>% table() %>% data.frame()
+
+DATE_CRIME_2019$DM <- DM_CASE_2019$Freq
+DATE_CRIME_2019$CHILD <- CHILD_CASE_2019$Freq
+
+DATE_CRIME_2019$DM_Rate <- DATE_CRIME_2019$DM/DATE_CRIME_2019$TOTAL_CRIME
+DATE_CRIME_2019$CHILD_rate <- DATE_CRIME_2019$CHILD/DATE_CRIME_2019$TOTAL_CRIME
+
+```
+
+
+## CITY CRIME 2019
+
+```{r}
+CITY_CRIME_2019 <- data.frame(table(CRIMES_LOCKDOWN_2019$CITY))
+colnames(CITY_CRIME_2019) <- c("CITY","TOTAL_CRIME")
+
+dm_2019 <- filter(CRIMES_LOCKDOWN, grepl('DOMESTIC|Domestic', STAT_DESC))$CITY %>% table() %>% data.frame()
+
+CITY_CRIME_2019 <- merge(CITY_CRIME_2019,dm_2019,by.x = "CITY",by.y = ".",all.x = TRUE)
+colnames(CITY_CRIME_2019)[3] <- "DM"
+
+ch_2019 <- filter(CRIMES_LOCKDOWN, grepl('CHILD|Child|Children', STAT_DESC))$CITY %>% table() %>% data.frame()
+
+CITY_CRIME_2019 <- merge(CITY_CRIME_2019,ch_2019,by.x = "CITY",by.y = ".",all.x = TRUE)
+colnames(CITY_CRIME_2019)[4] <- "CH"
+```
+
+
+
+
+```{r}
+ggplot(DATE_CRIME_2019,aes(x = as.Date(DATE), y = DM_Rate)) + geom_line(aes(color = "2019"))+geom_line(mapping = aes(x = as.Date(DATE), y = DM_Rate, color = "2020"), data = DATE_CRIME_2020)
+
+t.test(DATE_CRIME_2019$DM_Rate,DATE_CRIME_2020$DM_Rate)
+```
+
+```{r}
+t.test(DATE_CRIME_2019$DM,DATE_CRIME_2020$DM)
+```
+
+```{r}
+t.test(DATE_CRIME_2019$CHILD,DATE_CRIME_2020$CHILD)
+```
+
+```{r}
+t.test(DATE_CRIME_2019$CHILD_rate,DATE_CRIME_2020$CHILD_Rate)
+```
+

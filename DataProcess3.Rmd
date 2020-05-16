@@ -1,0 +1,138 @@
+---
+title: "Mean_Rev"
+author: "Yan Sun(204768204)"
+date: "5/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+Crime_Data_from_2010_to_2019$`DATE OCC` <- sub("\\s.*","",Crime_Data_from_2010_to_2019$`DATE OCC`)
+Crime_Data_from_2010_to_2019$`DATE OCC` <- as.Date(Crime_Data_from_2010_to_2019$`DATE OCC`,"%m/%d/%y")
+
+date_var <- Crime_Data_from_2010_to_2019$`DATE OCC`
+date_var <- as.Date(date_var,"%m/%d/%Y")
+date_var <- data.frame(date = date_var, dummy = 1)
+total_crime <- date_var %>% group_by(date) %>% summarise(Freq = sum(dummy))
+summary(total_crime)
+total_crime[total_crime$Freq>1000,]
+omit_total_crime <- total_crime[total_crime$Freq<1000,]
+plot(omit_total_crime)
+
+Crime_Data_from_2020_to_Present$`DATE OCC` <- sub("\\s.*","",Crime_Data_from_2020_to_Present$`DATE OCC`) %>% as.Date(.,"%m/%d/%y")
+date_2020 <- Crime_Data_from_2020_to_Present$`DATE OCC`
+date_2020 <- data.frame(date = date_2020,dummy = 1)
+date_2020 <- date_2020 %>% group_by(date)%>% summarise(Freq = sum(dummy))
+total_crime <- rbind(total_crime,date_2020)
+omit_total_crime <- total_crime[total_crime$Freq<1000,]
+plot(omit_total_crime)
+
+library(xts)
+crime_xts <- as.xts(omit_total_crime$Freq, order.by = omit_total_crime$date,frequency = 12)
+plot(crime_xts)
+
+library(tseries)
+acf(crime_xts,plot = TRUE)
+
+
+plot(aggregate(as.ts(crime_xts),byFUN = mean))
+barplot(crime_xts)
+
+apply.weekly(crime_xts,colMeans) %>% as.xts(
+) %>% plot()
+```
+
+```{r}
+apply.weekly(crime_xts,colMeans) %>% diff() %>% as.xts(
+) %>% plot()
+```
+
+```{r}
+weekly_diff <- apply.weekly(crime_xts,colMeans) %>% diff() %>% na.omit()%>% as.xts() 
+acf(weekly_diff)
+Box.test(weekly, lag=100, type="Ljung-Box")
+```
+
+```{r}
+acf(weekly_diff)
+```
+
+
+```{r}
+apply.weekly(crime_xts,colMeans) %>% as.xts(
+) %>% acf()
+apply.weekly(crime_xts,colMeans) %>% as.xts(
+) %>% pacf()
+```
+```{r}
+library(forecast)
+weekly <- apply.weekly(crime_xts,colMeans) %>% as.xts()
+weekly_sample <- apply.weekly(crime_xts,colMeans)
+weekly_sample <- weekly_sample[-nrow(weekly_sample),] %>% as.xts()
+plot(weekly_sample)
+for (i in 1){ 
+  fit <- Arima(weekly_sample,order = c(i,0,2))
+  #fit <- auto.arima(weekly_sample)
+summary(fit)
+  #checkresiduals(fit)
+  fc <- forecast(fit,h = 12)
+  plot(fc)
+}
+
+monthly <- apply.monthly(crime_xts,colMeans) %>% as.xts()
+plot(monthly)
+for (i in 1){ 
+  fit <- Arima(monthly,order = c(i,0,2))
+  #fit <- auto.arima(weekly_sample)
+summary(fit)
+  #checkresiduals(fit)
+  fc <- forecast(fit,h = 12)
+  plot(fc)
+}
+
+
+
+N <- nrow(weekly)
+for (j in seq(from = 1, to = N,length.out = 5)){ 
+  temp <- weekly[j:N,] %>% as.xts()
+  fit <- auto.arima(temp)
+  #fit <- auto.arima(weekly_sample)
+summary(fit)
+  #checkresiduals(fit)
+  fc <- forecast(fit,h = 12)
+  plot(fc)
+}
+
+j <- 271
+temp <- weekly[j:N,] %>% as.xts()
+  #fit <- auto.arima(temp)
+fit <- Arima(temp,order = c(5,0,1))
+summary(fit)
+  #checkresiduals(fit)
+fc <- forecast(fit,h = 12,level = )
+plot(fc)
+
+library(stats)
+predict(fit,n.ahead = 52)
+```
+
+```{r}
+for (i in 6){
+fit2 <- Arima(weekly[-((N-1):N),] ,order = c(1,0,i))
+#fit2 <- auto.arima(weekly[-((N-1):N),])
+fc2 <- forecast(fit2,h = 52)
+plot(fc2)
+}
+fitted(fc)[539,]
+fc
+```
+
+```{r}
+
+```
+

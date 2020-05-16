@@ -1,0 +1,58 @@
+---
+title: "Covid_data_processing"
+author: "Yan Sun(204768204)"
+date: "5/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+## import packages
+
+```{r}
+library(tidyr)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(readr)
+```
+
+## import data
+
+```{r}
+X2020_PART_I_AND_II_CRIMES <- read_csv("PART_I_AND_II_CRIMES.csv")
+city_community_table <- read_csv("city_community_table.csv")
+Unemployment_CA_2020March <- read_csv("Unemployment_CA_2020March.csv")
+X2019_PART_I_AND_II_CRIMES <- read_csv("2019-PART_I_AND_II_CRIMES.csv")
+La_city_area <- read_csv("La_city_area.csv")
+La_city_area2 <- read_csv("La_city_area2.csv")
+```
+
+## Area
+
+```{r}
+La_city_area$city <- La_city_area$city %>% sapply(str_to_upper)
+La_city_area2$city <- La_city_area2$city %>% sapply(str_to_upper)
+La_city_area2$city <- sub("\\*","",La_city_area2$city)
+CITY_AREA <- merge(La_city_area,La_city_area2,all.y = TRUE)
+CITY_AREA <- CITY_AREA[,c(1,3)]
+colnames(CITY_AREA)[2] <- "area"
+```
+
+## Crime 2020 by city
+```{r}
+CITY_CRIME_2020 <- data.frame(table(X2020_PART_I_AND_II_CRIMES$CITY))
+colnames(CITY_CRIME_2020) <- c("CITY","TOTAL_CRIME")
+CITY_NAME <- CITY_CRIME_2020$CITY %>% as.character()
+
+dm <- filter(X2020_PART_I_AND_II_CRIMES, grepl('DOMESTIC|Domestic', STAT_DESC))$CITY %>% table() %>% data.frame()
+ch <- filter(X2020_PART_I_AND_II_CRIMES, grepl('CHILD|Child|Children', STAT_DESC))$CITY %>% table() %>% data.frame()
+
+CITY_CRIME_2020 <- merge(CITY_CRIME_2020,dm,by.x = "CITY",by.y = ".",all.x = TRUE)
+CITY_CRIME_2020 <- merge(CITY_CRIME_2020,ch,by.x = "CITY",by.y = ".",all.x = TRUE)
+```
+

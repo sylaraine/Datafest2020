@@ -1,0 +1,49 @@
+---
+title: "Untitled"
+author: "Yan Sun(204768204)"
+date: "5/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+PART_I_AND_II_CRIMES <- read_csv("PART_I_AND_II_CRIMES.csv")
+PART_I_AND_II_CRIMES$year <- 2020
+CRIME_30_DAYS_2019$year <- 2019
+CRIME_30_DAYS_2019 <- CRIME_30_DAYS_2019[,colnames(PART_I_AND_II_CRIMES)]
+combined_crime <- base::rbind(PART_I_AND_II_CRIMES,CRIME_30_DAYS_2019)
+combined_crime$year <- combined_crime$year %>% as.factor()
+write.csv(combined_crime,"combined_crime_2019_2020")
+```
+
+```{r}
+combined_crime %>% filter(grepl("RAPE",STAT_DESC)) %>% group_by(STAT,year) %>%
+  ggplot() + geom_bar(aes(x = STAT,fill = year), position = "dodge")
+
+combined_crime %>% filter(STAT %in% c("174","176","177")) %>% group_by(STAT,year) %>%
+  ggplot() + geom_bar(aes(x = STAT,fill = year), position = "dodge")
+
+combined_crime %>% filter(grepl("CHILD|Children|Child",STAT_DESC)) %>% group_by(STAT,year) %>%
+  ggplot() + geom_bar(aes(x = STAT,fill = year), position = "dodge")
+
+combined_crime %>% filter(grepl("DOMESTIC|Domestic",STAT_DESC)) %>% group_by(STAT,year) %>%
+  ggplot() + geom_bar(aes(x = STAT,fill = year), position = "dodge")
+```
+
+```{r}
+combined_crime$type <- NA
+combined_crime[grepl("RAPE",combined_crime$STAT_DESC),"type"] <- "rape"
+combined_crime[grepl("ELDER|Elder",combined_crime$STAT_DESC),"type"] <- "elder"
+combined_crime[grepl("CHILD|Children|Child",combined_crime$STAT_DESC),"type"] <- "child"
+combined_crime[grepl("DOMESTIC|Domestic",combined_crime$STAT_DESC),"type"] <- "general"
+
+combined_crime %>% filter(!is.na(type),year=="2019") %>% ggplot() + geom_bar(aes(x = factor(1), fill = type)) + coord_polar(theta = "y")
+
+combined_crime %>% filter(!is.na(type),year=="2020") %>% ggplot() + geom_bar(aes(x = factor(1), fill = type)) + coord_polar(theta = "y")
+```
+
