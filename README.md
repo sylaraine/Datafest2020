@@ -1,6 +1,6 @@
 # Datafest2020
 
-Please see Appendix for detaied data processing and selection. 
+Please see Appendix for detailed data processing and selection. 
 
 The methodology of modelling is also well-justified and explained in the Appendix. 
 
