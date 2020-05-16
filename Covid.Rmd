@@ -1,0 +1,243 @@
+---
+title: "Covid-19"
+author: "Yan Sun(204768204)"
+date: "5/9/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## import packages
+
+```{r}
+library(tidyr)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(readr)
+```
+
+## import data
+
+```{r}
+CRIMES_LOCKDOWN <- read_csv("PART_I_AND_II_CRIMES.csv")
+city_community_table <- read_csv("city_community_table.csv")
+Unemployment_CA_2020March <- read_csv("Unemployment_CA_2020March.csv")
+X2019_PART_I_AND_II_CRIMES <- read_csv("2019-PART_I_AND_II_CRIMES.csv")
+```
+
+## Count crime cases in different regions
+
+```{r}
+CRIMES_LOCKDOWN <- read_csv("city_crime_2019")
+CRIMES_LOCKDOWN <- CRIMES_LOCKDOWN %>% filter(INCIDENT_DATE >"2019-03-19", INCIDENT_DATE < "2019-05-04")
+CITY_TOTAL_CRIME <- data.frame(table(CRIMES_LOCKDOWN$CITY))
+colnames(CITY_TOTAL_CRIME) <- c("CITY","TOTAL_CRIME")
+
+CITY_DM <- filter(CRIMES_LOCKDOWN, grepl('DOMESTIC|Domestic', STAT_DESC))
+CITY_CHILD <- filter(CRIMES_LOCKDOWN, grepl('CHILD|Child|Children', STAT_DESC))
+
+CITY_DM <- data.frame(table(CITY_DM$CITY))
+CITY_CHILD <- data.frame(table(CITY_CHILD$CITY))
+
+CITY_TOTAL_CRIME <- merge(CITY_TOTAL_CRIME,CITY_DM,by.x = "CITY",by.y = "Var1",all.x = TRUE)
+colnames(CITY_TOTAL_CRIME) <- c("CITY","TOTAL_CRIME","DM")
+CITY_TOTAL_CRIME <- merge(CITY_TOTAL_CRIME,CITY_CHILD,by.x = "CITY",by.y = "Var1",all.x = TRUE)
+CITY_TOTAL_CRIME <- CITY_TOTAL_CRIME[,c("CITY","TOTAL_CRIME","DM","Freq")]
+colnames(CITY_TOTAL_CRIME) <- c("CITY","TOTAL_CRIME","DM","CHILD")
+write.csv(CITY_TOTAL_CRIME,"city_crime_count_2019")
+```
+
+## Merge population and covid-19 cases to crime data
+
+```{r}
+city_community_table$geo_merge <- city_community_table$geo_merge %>% sapply(str_to_upper)
+CITY_TOTAL_CRIME$POPULATION <- NA
+CITY_TOTAL_CRIME$COVID_CASE <- NA
+for (i in 1:nrow(CITY_TOTAL_CRIME)){
+  #print(CITY_TOTAL_CRIME[i,1])
+  case_pop <- 
+    filter(city_community_table,grepl(paste("^",CITY_TOTAL_CRIME[i,1],"$",sep = ""),city_community_table$geo_merge))%>%
+    select("cases_final","population") %>% colSums()
+  # if(nrow(case_pop)>1){
+  #   print(i)
+  #   print(CITY_TOTAL_CRIME[i,1])
+  # }
+  if (!all(case_pop == c(0,0))){
+    CITY_TOTAL_CRIME[i,c("COVID_CASE","POPULATION")] <- case_pop
+  }
+}
+
+CITY_TOTAL_CRIME[CITY_TOTAL_CRIME$CITY=="LOS ANGELES",][c("COVID_CASE","POPULATION")] <- filter(city_community_table,grepl("^LOS ANGELES",city_community_table$geo_merge))%>%
+    select("cases_final","population")%>%
+    colSums()
+```
+
+## Merge unemployment data
+
+```{r}
+Unemployment_CA_2020March$AREA <- Unemployment_CA_2020March$AREA %>% sapply(str_to_upper)
+Unemployment_CA_2020March$UNEMPLOY_RATE <- sub("%", "",Unemployment_CA_2020March$UNEMPLOY_RATE)
+Unemployment_CA_2020March$AREA <-sub("\\sCITY|\\sCDP","",Unemployment_CA_2020March$AREA)
+
+CITY_TOTAL_CRIME$UNEMPLOY_NUM <- NA
+CITY_TOTAL_CRIME$UNEMPLOY_RATE <- NA
+
+for (i in 1:nrow(CITY_TOTAL_CRIME)){
+  #print(CITY_TOTAL_CRIME[i,1])
+  num_rate <- 
+    filter(Unemployment_CA_2020March,grepl(paste("^",CITY_TOTAL_CRIME[i,1],"$",sep = ""),Unemployment_CA_2020March$AREA)) %>% select("UNEMPLY_NUMBER","UNEMPLOY_RATE") 
+  #print("filter")
+  if (nrow(num_rate)!=0){
+    CITY_TOTAL_CRIME[i,c("UNEMPLOY_NUM","UNEMPLOY_RATE")] <- num_rate
+  }
+  #print("end")
+}
+  
+```
+
+
+## Merge Law enforcement data
+
+```{r}
+CA_law_enforcement_2018 <- read_csv("Desktop/Datafest2020/CA_law_enforcement_2018.csv")
+CA_law_enforcement_2018$City <- CA_law_enforcement_2018$City %>% sapply(str_to_upper)
+
+CITY_TOTAL_CRIME$LAW_ENFORCE_RATE <- NA
+
+law_city_count <- c()
+for (i in 1:nrow(CITY_TOTAL_CRIME)){
+  law_rate <- 
+    filter(CA_law_enforcement_2018,grepl(paste("^",CITY_TOTAL_CRIME[i,1],"$",sep = ""),CA_law_enforcement_2018$City)) %>% select("enforcenment_rate") 
+  #print("filter")
+  if (nrow(law_rate)!=0){
+   law_city_count <-append(law_city_count,CITY_TOTAL_CRIME[i,1])
+    CITY_TOTAL_CRIME[i,"LAW_ENFORCE_RATE"] <- law_rate
+  }
+  #print("end")
+}
+```
+
+
+## Merge area data
+```{r}
+CRIME_COVID <- read_csv("COVID_CRIME_LA_COUNTY")
+La_city_area <- read_csv("La_city_area.csv")
+La_city_area2 <- read_csv("La_city_area2.csv")
+La_city_area$city <- La_city_area$city %>% sapply(str_to_upper)
+La_city_area2$city <- La_city_area2$city %>% sapply(str_to_upper)
+La_city_area2$city <- sub("\\*","",La_city_area2$city)
+CITY_AREA <- merge(La_city_area,La_city_area2,all.y = TRUE)
+CITY_AREA <- CITY_AREA[,c(1,3)]
+colnames(CITY_AREA)[2] <- "area"
+CRIME_COVID <- merge(CRIME_COVID,CITY_AREA,by.x = "CITY",by.y = "city",all.x = TRUE)
+CRIME_COVID <- CRIME_COVID[,-2]
+```
+
+## Merge median income
+
+```{r}
+LA_median_income <- read_csv("LA_median_income.csv", col_types = cols(`Median Income` = col_number()))
+LA_median_income <- LA_median_income[,1:2]
+CRIME_COVID <- merge(CRIME_COVID,LA_median_income,by.x = "CITY",by.y = "CITY",all.x = TRUE)
+```
+
+
+
+
+
+## NA handling
+
+```{r}
+CRIME_COVID <- CRIME_COVID %>% filter(!is.na(POPULATION))
+```
+
+
+## Prepross Data
+
+```{r}
+#Convert first column to rownames
+CRIME_COVID <- CRIME_COVID[,-1]
+#row.names(CRIME_COVID) <- CRIME_COVID[,1]
+
+#Remove unemployment number
+CRIME_COVID <- CRIME_COVID[,-6]
+
+#Unemployment data is not numeric
+CRIME_COVID$UNEMPLOY_RATE <- CRIME_COVID$UNEMPLOY_RATE %>% as.numeric()
+
+#Scale Law enforcement rate by 100
+CRIME_COVID$LAW_ENFORCE_RATE <- CRIME_COVID$LAW_ENFORCE_RATE * 100
+
+#Save data
+write.csv(CRIME_COVID,"city_crime_covid_2020")
+```
+
+
+## Prediction
+
+```{r}
+CRIME_COVID %>% mutate(predict = 4.8*POPULATION*0.47/12000, diff = predict - DM) 
+
+dm_city_2019 <- CRIME_30_DAYS_2019 %>% filter(grepl("DOMESTIC|Domestic",STAT_DESC)) 
+dm_city_2019 <- dm_city_2019$CITY %>% table() %>% data.frame()
+dm_city_2019 <- merge(CRIME_COVID[,c("CITY","POPULATION")],dm_city_2019,by.x = "CITY",by.y = ".")
+dm_city_2019 <- dm_city_2019 %>% mutate(predict = 4.8*POPULATION*0.47/12000, diff = predict - Freq) 
+t.test(dm_city_2019$Freq,dm_city_2019$predict)
+plot(dm_city_2019$diff[dm_city_2019$diff<200])
+
+
+dm_city_2020 <- CRIME_COVID %>% mutate(predict = 4.8*POPULATION*0.47/12000, diff = predict - DM)
+t.test(dm_city_2020$DM,dm_city_2020$predict)
+plot(dm_city_2020$diff[dm_city_2020$diff<200&dm_city_2020$diff>(-20)])
+```
+
+```{r}
+plot(dm_city_2019$diff[dm_city_2019$diff<200])
+plot(dm_city_2020$diff[dm_city_2020$diff<200&dm_city_2020$diff>(-20)])
+```
+
+## Model omitting all missing values
+
+```{r}
+model <- lm(DM~I(area/POPULATION)+LAW_ENFORCE_RATE+UNEMPLOY_RATE,data=as.data.frame(CRIME_COVID),na.action=na.omit)
+summary(model)
+```
+
+
+## Missing data analysis
+
+```{r}
+library(BaylorEdPsych)
+library(mvnmle)
+LittleMCAR(CRIME_COVID)
+
+apply(CRIME_COVID, 2, is.na) %>% colSums()
+
+```
+
+#Model after imputing missing values
+
+```{r}
+library(mice)
+imputed <- mice(CRIME_COVID,m=5,method = 'pmm',maxit = 100,seed = 1)
+summary(imputed)
+
+##DM
+modelFit1 <- with(imputed,lm(DM~I(POPULATION/area)))
+summary(pool(modelFit1))
+
+##CHILD
+modelFit3 <- with(imputed,lm(CHILD/TOTAL_CRIME~I(COVID_CASE/POPULATION)+UNEMPLOY_RATE+LAW_ENFORCE_RATE))
+summary(pool(modelFit3))
+```
+
+
+```{r}
+##Total crime
+modelFit2 <- with(imputed,lm(TOTAL_CRIME~POPULATION+COVID_CASE+UNEMPLOY_RATE+LAW_ENFORCE_RATE))
+summary(pool(modelFit2))
+```
+
