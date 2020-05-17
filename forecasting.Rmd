@@ -1,0 +1,191 @@
+---
+title: "Modeling"
+author: "Yan Sun(204768204)"
+date: "5/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import Dataset
+
+```{r}
+Crime_Data_from_2020_to_Present <- read_csv("Crime_Data_from_2020_to_Present.csv", col_types = cols(`DATE OCC` = col_datetime(format = "%m/%d/%Y %H:%M:%S AM")))
+
+Crime_Data_from_2010_to_2019 <- read_csv("Crime_Data_from_2010_to_2019.csv", col_types = cols(`DATE OCC` = col_datetime(format = "%m/%d/%Y %H:%M:%S AM")))
+```
+
+## Short-term model for lock-down period
+
+```{r}
+crime_2020 <- Crime_Data_from_2020_to_Present$`DATE OCC`
+crime_lockdown <- crime_2020[crime_2020$`DATE OCC`>"2020-03-18"&crime_2020$`DATE OCC`<"2020-05-04","DATE OCC"]
+crime_lockdown<-data.frame(date = crime_lockdown,dummy = 1)
+colnames(crime_lockdown)[1]<-"date"
+crime_lockdown <- crime_lockdown %>% group_by(date) %>% summarise(Frq = sum(dummy))
+daily_crime_lockdown_xts <- as.xts(crime_lockdown$Frq,order.by = crime_lockdown$date,start = c(2020,03,18))
+plot(daily_crime_lockdown_xts)
+daily_crime_lockdown_xts %>% ggtsdisplay()
+adf.test(daily_crime_lockdown_xts)
+fit_lockdown <- auto.arima(daily_crime_lockdown_xts)
+summary(fit_lockdown)
+checkresiduals(fit_lockdown)
+ # Extended lockdown
+fc_days <- as.Date("2020-07-31") - as.Date("2020-05-04")
+fc_lockdown <- forecast(fit_lockdown,h = fc_days)
+autoplot(fc_lockdown)
+forecast(fc_lockdown,h = fc_days) %>% autoplot()
+
+```
+
+## Long-term model for reopening
+
+### data processing
+```{r}
+crime_2010 <- Crime_Data_from_2010_to_2019$`DATE OCC`
+crime_2010<- data.frame(date = crime_2010,dummy = 1)
+crime_2010 <- crime_2010 %>% group_by(date) %>% summarise(Frq = sum(dummy))
+ # unusually high number of cases (over 1000) reported on January 1 of each year
+omit_crime_2010 <- crime_2010[crime_2010$Frq<1000,]
+crime_2010$Frq %>% mean()
+omit_crime_2010$Frq %>% mean()
+ # decide to omit these cases since the overall averages only defer by 3
+daily_crime_2010_xts <- as.xts(omit_crime_2010$Frq,order.by = omit_crime_2010$date, start = c(2010,1,1))
+ # daily data is too noisy, use weekly average instead
+plot(daily_crime_2010_xts)
+weekly_2010_xts <- apply.weekly(daily_crime_2010_xts,colMeans) 
+plot(weekly_2010_xts)
+weekly_2010.df <- data.frame(date = index(weekly_2010_xts),count = NA)
+weekly_2010.df$count <- weekly_2010_xts%>%as.data.frame()
+weekly_2010_ts <- ts(weekly_2010.df$count, 
+   freq=365.25/7, 
+   start= decimal_date(ymd(weekly_2010.df[1, 1])))
+```
+
+###seasonality detection
+
+```{r}
+weekly_2010_xts %>% ggtsdisplay()
+msts_weekly_2010 <- msts(weekly_2010_ts,seasonal.periods = c(4,12,52,52*5),start = 2010,ts.frequency = 52)
+weekly_2010_xts %>% diff(lag = 52) %>% na.omit %>% adf.test
+weekly_2010_xts %>% diff(lag = 52) %>% ggtsdisplay()
+```
+
+###STL model trial
+
+```{r}
+msts_weekly_2010 %>% mstl() %>% autoplot()
+msts_weekly_2010 %>% stlf() %>% checkresiduals()
+```
+
+### Dynamic harmonic regression model with fouier terms
+
+```{r}
+msts_weekly_2010 <- msts(weekly_2010_ts,seasonal.periods = 52, start = 2010,ts.frequency = 52)
+bestfit <- list(aicc=Inf)
+for (i in 1:26) {
+  fit_four<-auto.arima(msts_weekly_2010,seasonal = F,lambda = 0,xreg = fourier(msts_weekly_2010,K = i))
+  if(fit_four[["aicc"]] < bestfit[["aicc"]]){
+    bestfit <- fit_four
+    besti <- i
+  }
+}
+
+fc <- forecast(bestfit, xreg = fourier(msts_weekly_2010, K = 12, h = 52*1.5))
+
+checkresiduals(bestfit)
+summary(bestfit)
+
+predict(fc,xreg = fourier(msts_weekly_2010, K = besti, h = 52*1.5),n.ahead = 52*1.5) %>% autoplot()
+```
+
+
+## Prediction
+
+### Short-term prediction
+
+```{r}
+predictted_lockdown <- predict(fit_lockdown,fc_days)
+next_day<- as.Date("2020-05-04")
+future_july <-c()
+for(i in 1:fc_days){
+  future_july <- append(future_july,next_day+i)
+}
+
+lockdown_prediction <- data.frame(date = future_july,prediction = predictted_lockdown$pred)
+lockdown_prediction %>% ggplot() + geom_line(aes(x = date, y = prediction)) + geom_line(aes(x = date,y = Frq),data = crime_lockdown)+ geom_line(aes(x = weeklyDate, y = predictMean),data = weeklyPrediction)
+```
+
+### Long-term prediction
+
+```{r}
+predictted_52_weeks_2020 <- predict(fc,xreg=fourier(msts_weekly_2010, K=12, h=78),n.ahead = 78)
+startDate <- as.Date("2020-01-01")
+weeklyDate<-c(startDate)
+for (i in 1:(78)){
+  weeklyDate = append(weeklyDate,startDate+i*7)
+}
+weeklyPrediction <- data.frame(weeklyDate = weeklyDate[-1],predictMean = predictted_52_weeks_2020$mean)
+
+weeklyPrediction %>% ggplot() + geom_line(aes(x = weeklyDate, y = predictMean))
+
+weeklyPrediction[abs(weeklyPrediction$predictMean-hist_avg)<1,]
+```
+
+### Drift Method
+
+Last month, officials extended LA county's "safer at home" order until at least May 15. Although LA mayor Eric Garcetti said on May 12 that stay-at-home order will be extended for the next three months, he further ellaborated that the order is not exactly as it is today. Los Angeles has gradually begun a reopening of certain businesses and recreational areas. 
+https://www.google.com/amp/s/abc7.com/amp/coronavirus-los-angeles-mayor-eric-garcetti-la-county-lockdown-barbara-ferrer/6177882/
+
+Therefore, we do not expect crime will be contained in a relatively low level in the short-term future, which is about 450 cases per day. Instead, in the next three months, we expect the crime cases will increase to historical average, which is about 580 cases/per day. And the total crime will then evolve with the long-term forecating. 
+
+We use a drift method to approximate this trend. This is equivalent to drawing a line between any two predicted values for the next three months. After several trials, we choose the 4th and 15th prediction as our first and last observations and extrapolate it into the future. 
+
+```{r}
+## fc_days == 88
+
+new_model <- rwf(lockdown_prediction$prediction[4:15],drift = TRUE,h = 84)
+autoplot(rwf(lockdown_prediction$prediction[4:15],drift = TRUE,h = 84))
+drift <- predict(new_model,n.ahead = 84)
+new_lock_proj<-data.frame(date = lockdown_prediction$date,prediction = NA)
+new_lock_proj$prediction[1:4]<-lockdown_prediction$prediction[1:5]
+new_lock_proj$prediction[5:88]<-drift$mean
+```
+
+## Final plot
+
+```{r}
+new_lock_proj$period <-"Reopen"
+weeklyPrediction_july <- weeklyPrediction[weeklyPrediction$weeklyDate>"2020-07-31",]
+weeklyPrediction_july$period <- "Reopen"
+# Adjust the weekly date to match August 1
+weeklyPrediction_july$date <-weeklyPrediction_july$date-3
+crime_lockdown$period <- "Lockdown"
+
+before_lockdown <- crime_2020[crime_2020$`DATE OCC`<"2020-03-18","DATE OCC"]
+before_lockdown<-data.frame(date = before_lockdown,dummy = 1)
+colnames(before_lockdown)[1]<-"date"
+before_lockdown <- before_lockdown %>% group_by(date) %>% summarise(Frq = sum(dummy))
+before_lockdown$period <-"Before Lockdown"
+colnames(before_lockdown)<-colnames(lockdown_prediction)
+# Omit 2020-01-01 for unusually high number of cases (over 1000) reported on January 1 of each year
+before_lockdown<-before_lockdown[-1,]
+colnames(weeklyPrediction_july) <- colnames(new_lock_proj)
+final_prediction1 <- rbind(before_lockdown,crime_lockdown)
+final_prediction2 <- rbind(new_lock_proj,weeklyPrediction_july)
+
+hist_avg <- weekly_2010.df$count %>% unlist() %>% as.numeric () %>% mean()
+
+ggplot() + geom_line(aes(x = date, y = prediction, color = period),data = final_prediction1)+geom_smooth(aes(x = date, y = prediction, color = period),method = "loess",data = final_prediction2)+geom_hline(aes(yintercept = hist_avg),linetype = "dashed",color = "red") +theme_classic() +geom_text(aes(y = hist_avg,label = "Historical Average = 575.9981",x = as.Date("2020-01-01"),hjust = -1,vjust = 2),color = "red",alpha = 0.8)+ggtitle("Total Crime Cases Forecasting in LA County")+scale_x_date(date_breaks = "1 month")+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+## Check Long-term model fit the data before lock down well
+
+```{r}
+ggplot() + geom_line(aes(x = weeklyDate, y = predictMean,color = "red"), data = weeklyPrediction[1:12,]) + geom_line(aes(x = date,y = prediction),data = before_lockdown)
+```
+
